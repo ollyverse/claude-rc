@@ -1,0 +1,99 @@
+#!/bin/sh
+# Entrypoint of the claude-rc image. In order: GitHub credentials, git identity,
+# the checkouts, the Docker daemon (worker pods), the claude.ai login (waits for
+# the operator), then the Remote Control server, which replaces this shell.
+set -eu
+
+: "${CLAUDE_SESSION_NAME:=claude-rc}"
+: "${CLAUDE_SESSION_ORDINAL:=0}"
+: "${CLAUDE_CAPACITY:=32}"
+: "${CLAUDE_PERMISSION_MODE:=acceptEdits}"
+: "${GIT_REPOS:=}"
+: "${GIT_USER_NAME:=}"
+: "${GIT_USER_EMAIL:=}"
+: "${CLAUDE_RC_GITHUB_DIR:=/etc/claude-rc/github}"
+: "${CLAUDE_RC_WORKSPACE:=/workspace}"
+: "${CLAUDE_RC_LOGIN_WAIT:=60}"
+: "${HOSTNAME:=$(hostname)}"
+: "${POD_NAMESPACE:=<namespace>}"
+
+log() { printf 'claude-rc: %s\n' "$*"; }
+
+session_name() {
+    if [ "$CLAUDE_SESSION_ORDINAL" = 1 ]; then
+        ordinal="${HOSTNAME##*-}"
+        case "$ordinal" in
+            "" | *[!0-9]*) log "hostname $HOSTNAME has no ordinal; is this a StatefulSet pod?" >&2; exit 1 ;;
+        esac
+        printf '%s-%02d' "$CLAUDE_SESSION_NAME" "$((ordinal + 1))"
+    else
+        printf '%s' "$CLAUDE_SESSION_NAME"
+    fi
+}
+
+github() {
+    [ -d "$CLAUDE_RC_GITHUB_DIR" ] || return 0
+    git config --global credential.useHttpPath true
+    git config --global credential.https://github.com.helper claude-rc
+    # A Secret mount holds ..data and ..<timestamp> directories too; the glob skips dot entries.
+    for f in "$CLAUDE_RC_GITHUB_DIR"/*; do
+        [ -f "$f" ] || continue
+        if gh auth login --hostname github.com --with-token < "$f" >/dev/null 2>&1; then
+            log "gh: logged in with the token for $(basename "$f")"
+        else
+            log "gh auth login failed for $(basename "$f"); git still works through the credential helper"
+        fi
+    done
+}
+
+identity() {
+    [ -z "$GIT_USER_NAME" ] || git config --global user.name "$GIT_USER_NAME"
+    [ -z "$GIT_USER_EMAIL" ] || git config --global user.email "$GIT_USER_EMAIL"
+}
+
+checkouts() {
+    mkdir -p "$CLAUDE_RC_WORKSPACE"
+    # shellcheck disable=SC2086  # GIT_REPOS is a space-separated list by contract
+    for pair in $GIT_REPOS; do
+        name="${pair%%=*}"
+        url="${pair#*=}"
+        if [ -z "$name" ] || [ "$name" = "$pair" ]; then
+            log "GIT_REPOS entry is not name=url: $pair"; exit 1
+        fi
+        [ -d "$CLAUDE_RC_WORKSPACE/$name/.git" ] && continue
+        log "cloning $url into $CLAUDE_RC_WORKSPACE/$name"
+        git clone --quiet "$url" "$CLAUDE_RC_WORKSPACE/$name" || log "clone of $name failed; continuing without it"
+    done
+}
+
+docker_wait() {
+    [ -n "${DOCKER_HOST:-}" ] || return 0
+    i=0
+    until docker info >/dev/null 2>&1; do
+        i=$((i + 1))
+        if [ "$i" -ge 24 ]; then log "docker daemon at $DOCKER_HOST not reachable after 2 minutes; continuing"; return 0; fi
+        sleep 5
+    done
+    log "docker daemon ready at $DOCKER_HOST"
+}
+
+login_wait() {
+    until claude auth status >/dev/null 2>&1; do
+        log "not logged in; run: kubectl -n $POD_NAMESPACE exec -it $HOSTNAME -c claude -- claude auth login"
+        sleep "$CLAUDE_RC_LOGIN_WAIT"
+    done
+}
+
+main() {
+    name="$(session_name)"
+    github
+    identity
+    checkouts
+    docker_wait
+    login_wait
+    cd "$CLAUDE_RC_WORKSPACE"
+    log "starting the Remote Control server as session $name"
+    exec claude remote-control --name "$name" --spawn same-dir --capacity "$CLAUDE_CAPACITY" --permission-mode "$CLAUDE_PERMISSION_MODE"
+}
+
+main "$@"
