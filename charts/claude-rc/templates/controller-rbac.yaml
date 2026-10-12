@@ -1,0 +1,49 @@
+{{- if .Values.controller.enabled }}
+{{- $labels := dict "root" . "tier" "controller" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "claude-rc.fullname" . }}
+  labels:
+    {{- include "claude-rc.labels" $labels | nindent 4 }}
+automountServiceAccountToken: false
+---
+# The controller session's whole in-cluster privilege: scale the worker
+# StatefulSet and watch its pods. Nothing cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "claude-rc.fullname" . }}-controller
+  labels:
+    {{- include "claude-rc.labels" $labels | nindent 4 }}
+rules:
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    resourceNames: [{{ include "claude-rc.workerName" . }}]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [statefulsets/scale]
+    resourceNames: [{{ include "claude-rc.workerName" . }}]
+    verbs: [get, update, patch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "claude-rc.fullname" . }}-controller
+  labels:
+    {{- include "claude-rc.labels" $labels | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "claude-rc.fullname" . }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "claude-rc.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

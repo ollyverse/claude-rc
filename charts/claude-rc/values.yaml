@@ -1,0 +1,66 @@
+image:
+  repository: ghcr.io/ollyverse/claude-rc
+  # Defaults to the chart's appVersion: chart X.Y.Z runs image X.Y.Z.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Only needed if the ghcr.io package is private, e.g. [{ name: ghcr-pull }].
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+git:
+  # name: https URL. Each is cloned into /workspace/<name> when missing. Private
+  # repositories need a token in github.existingSecret for their owner.
+  repos: {}
+  # Author of the commits the sessions make.
+  user:
+    name: ""
+    email: ""
+
+github:
+  # A Secret with one key per GitHub owner (ollyverse, matofeder, ...) whose
+  # value is a fine-grained token. Mounted at /etc/claude-rc/github; the git
+  # credential helper picks the file by repository owner, gh logs in to each.
+  existingSecret: ""
+
+session:
+  # Base name of the sessions shown at claude.ai/code; the release name when empty.
+  # Workers append -01, -02, ... (StatefulSet ordinal + 1).
+  name: ""
+  # claude remote-control --permission-mode; acceptEdits approves edits and asks for every command.
+  permissionMode: acceptEdits
+  # claude remote-control --capacity: concurrent sessions one pod serves.
+  capacity: 32
+
+persistence:
+  # One volume per pod: the claude.ai login, .claude.json, gh config, and /workspace.
+  size: 10Gi
+  # Empty: the cluster's default StorageClass.
+  storageClassName: ""
+
+controller:
+  enabled: true
+  resources:
+    requests: {cpu: 200m, memory: 512Mi}
+    limits: {memory: 1.5Gi}
+  nodeSelector: {}
+  tolerations: []
+
+workers:
+  enabled: true
+  # The rest state. Scale with kubectl (the controller's ServiceAccount may);
+  # Argo CD must ignore /spec/replicas of the StatefulSet.
+  replicas: 0
+  dind:
+    image: docker:29.9.0-dind
+  resources:
+    claude:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {memory: 1Gi}
+    dind:
+      requests: {cpu: 200m, memory: 256Mi}
+      limits: {memory: 1.8Gi}
+  nodeSelector: {}
+  tolerations: []
