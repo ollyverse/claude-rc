@@ -1,0 +1,10 @@
+.git
+.github
+.claude
+.idea
+.vscode
+*.md
+charts
+tests
+Dockerfile
+.dockerignore

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: {python-version: "3.12"}
+      - uses: azure/setup-helm@v5
+      - run: sudo apt-get install -y --no-install-recommends shellcheck
+      - run: pip install --quiet pyyaml
+      - run: shellcheck -s sh bin/claude-rc bin/git-credential-claude-rc
+      - run: helm lint --strict charts/claude-rc
+      - run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        run: docker build -t claude-rc:ci .
+      - name: Tools are installed and run as uid 1000
+        run: |
+          docker run --rm --read-only --tmpfs /tmp -e HOME=/tmp --entrypoint sh claude-rc:ci -c '
+            set -eu
+            [ "$(id -u)" = 1000 ]
+            claude --version
+            gh --version | head -n1
+            docker --version
+            kind version
+            kubectl version --client
+            helm version --short
+            git --version
+            test -x /usr/local/bin/claude-rc && test -x /usr/local/bin/git-credential-claude-rc'
+      # The worker pod: a privileged dind sidecar sharing a socket directory with the claude container.
+      - name: Docker-in-Docker socket is usable from the claude container
+        run: |
+          docker volume create rc-sock
+          docker run -d --name dind --privileged -e DOCKER_TLS_CERTDIR= \
+            -v rc-sock:/run/docker docker:29.9.0-dind --host=unix:///run/docker/docker.sock --group=1000
+          for i in $(seq 1 30); do
+            docker run --rm -v rc-sock:/run/docker -e DOCKER_HOST=unix:///run/docker/docker.sock --entrypoint docker claude-rc:ci info >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker run --rm -v rc-sock:/run/docker -e DOCKER_HOST=unix:///run/docker/docker.sock --entrypoint docker claude-rc:ci info --format '{{.ServerVersion}}'
+      - if: failure()
+        run: docker logs dind || true

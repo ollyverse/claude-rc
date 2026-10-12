@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.tgz
+.idea/
+.vscode/
+.claude/

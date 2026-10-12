@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+  # The base image. The tools (Claude Code, gh, docker CLI, kind, kubectl, helm)
+  # are ARGs in the Dockerfile and are bumped by hand; see the README.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
