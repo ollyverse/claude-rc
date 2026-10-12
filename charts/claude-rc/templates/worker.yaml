@@ -1,0 +1,99 @@
+{{- if .Values.workers.enabled }}
+{{- $labels := dict "root" . "tier" "worker" }}
+# Worker sessions: scale-from-zero, one volume (login + workspace) per pod,
+# a privileged Docker-in-Docker sidecar so a session can build images and run
+# kind. The daemon listens on a unix socket in an emptyDir shared with the
+# claude container only; nothing on the pod network.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "claude-rc.workerName" . }}
+  labels:
+    {{- include "claude-rc.labels" $labels | nindent 4 }}
+spec:
+  # Runtime state, set with kubectl scale; a GitOps tool must ignore it.
+  replicas: {{ .Values.workers.replicas }}
+  # No Service: sessions are reached through Anthropic, never through the pod network.
+  serviceName: {{ include "claude-rc.workerName" . }}
+  podManagementPolicy: Parallel
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      {{- include "claude-rc.selectorLabels" $labels | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "claude-rc.labels" $labels | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "claude-rc.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: claude
+          image: {{ include "claude-rc.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          tty: true
+          stdin: true
+          env:
+            {{- include "claude-rc.claudeEnv" (dict "root" . "ordinal" "1") | nindent 12 }}
+            - name: DOCKER_HOST
+              value: unix:///run/docker/docker.sock
+          securityContext:
+            {{- include "claude-rc.claudeSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.workers.resources.claude | nindent 12 }}
+          volumeMounts:
+            {{- include "claude-rc.claudeVolumeMounts" . | nindent 12 }}
+            - name: docker-sock
+              mountPath: /run/docker
+        - name: dind
+          image: {{ .Values.workers.dind.image | quote }}
+          # "dockerd" first: the image's entrypoint then keeps its cgroup and
+          # iptables setup but adds none of its default listeners (it would add
+          # tcp://0.0.0.0:2375, open to the whole pod network). --group=1000:
+          # the socket is group-readable by the claude user (uid/gid 1000).
+          args: ["dockerd", "--host=unix:///run/docker/docker.sock", "--group=1000"]
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          securityContext:
+            privileged: true
+          resources:
+            {{- toYaml .Values.workers.resources.dind | nindent 12 }}
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /run/docker
+            - name: docker-data
+              mountPath: /var/lib/docker
+      volumes:
+        - name: docker-sock
+          emptyDir: {}
+        - name: docker-data
+          emptyDir: {}
+        {{- include "claude-rc.sharedVolumes" . | nindent 8 }}
+      {{- with .Values.workers.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workers.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: home
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.persistence.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+{{- end }}
