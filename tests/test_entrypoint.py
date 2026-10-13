@@ -96,6 +96,12 @@ class Entrypoint(unittest.TestCase):
         self.assertIn("git config --global credential.useHttpPath true", log)
         self.assertIn("git config --global credential.https://github.com.helper claude-rc", log)
 
+    def test_checkouts_do_not_rename_the_session(self):
+        # sh has no local variables: the clone loop once overwrote the session name with the last repository's
+        r, log = self.e.run(CLAUDE_SESSION_NAME="ollyverse",
+                            GIT_REPOS="ollyplatform=https://github.com/ollyverse/ollyplatform.git vinnyexpres=https://github.com/matofeder/vinnyexpres.git")
+        self.assertEqual(self.final(log), ["claude remote-control --name ollyverse --spawn same-dir --capacity 32 --permission-mode acceptEdits"])
+
     def test_clones_missing_repositories_only(self):
         (self.e.work / "ollyplatform" / ".git").mkdir(parents=True)
         r, log = self.e.run(CLAUDE_SESSION_NAME="x",

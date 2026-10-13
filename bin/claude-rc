@@ -54,15 +54,16 @@ identity() {
 checkouts() {
     mkdir -p "$CLAUDE_RC_WORKSPACE"
     # shellcheck disable=SC2086  # GIT_REPOS is a space-separated list by contract
+    # sh has no local variables: never reuse a name main() relies on (session).
     for pair in $GIT_REPOS; do
-        name="${pair%%=*}"
-        url="${pair#*=}"
-        if [ -z "$name" ] || [ "$name" = "$pair" ]; then
+        repo="${pair%%=*}"
+        repo_url="${pair#*=}"
+        if [ -z "$repo" ] || [ "$repo" = "$pair" ]; then
             log "GIT_REPOS entry is not name=url: $pair"; exit 1
         fi
-        [ -d "$CLAUDE_RC_WORKSPACE/$name/.git" ] && continue
-        log "cloning $url into $CLAUDE_RC_WORKSPACE/$name"
-        git clone --quiet "$url" "$CLAUDE_RC_WORKSPACE/$name" || log "clone of $name failed; continuing without it"
+        [ -d "$CLAUDE_RC_WORKSPACE/$repo/.git" ] && continue
+        log "cloning $repo_url into $CLAUDE_RC_WORKSPACE/$repo"
+        git clone --quiet "$repo_url" "$CLAUDE_RC_WORKSPACE/$repo" || log "clone of $repo failed; continuing without it"
     done
 }
 
@@ -85,15 +86,15 @@ login_wait() {
 }
 
 main() {
-    name="$(session_name)"
+    session="$(session_name)"
     github
     identity
     checkouts
     docker_wait
     login_wait
     cd "$CLAUDE_RC_WORKSPACE"
-    log "starting the Remote Control server as session $name"
-    exec claude remote-control --name "$name" --spawn same-dir --capacity "$CLAUDE_CAPACITY" --permission-mode "$CLAUDE_PERMISSION_MODE"
+    log "starting the Remote Control server as session $session"
+    exec claude remote-control --name "$session" --spawn same-dir --capacity "$CLAUDE_CAPACITY" --permission-mode "$CLAUDE_PERMISSION_MODE"
 }
 
 main "$@"
