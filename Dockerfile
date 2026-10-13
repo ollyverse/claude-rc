@@ -19,7 +19,7 @@ RUN set -eux; \
 RUN set -eux; \
     curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
       | tar -xz -C /tmp "gh_${GH_VERSION}_linux_amd64/bin/gh"; \
-    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh; \
+    install -D -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/libexec/gh; \
     curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" \
       | tar -xz -C /tmp docker/docker; \
     install -m 0755 /tmp/docker/docker /usr/local/bin/docker; \
@@ -42,7 +42,8 @@ RUN set -eux; \
     mkdir -p /workspace; \
     chown claude:claude /workspace
 
-COPY --chmod=0755 bin/claude-rc bin/git-credential-claude-rc /usr/local/bin/
+# bin/gh wraps /usr/local/libexec/gh with the token of the current repository's owner.
+COPY --chmod=0755 bin/claude-rc bin/git-credential-claude-rc bin/gh /usr/local/bin/
 
 ENV HOME=/home/claude \
     CLAUDE_CONFIG_DIR=/home/claude/.claude \

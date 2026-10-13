@@ -1,0 +1,30 @@
+#!/bin/sh
+# gh with the token of the current repository's GitHub owner.
+#
+# Fine-grained tokens all authenticate as their creator, so `gh auth login`
+# could keep only one of them. Instead, no token is ever stored: this wrapper
+# reads the owner of `origin` (the same rule as git-credential-claude-rc), puts
+# that owner's token file from $CLAUDE_RC_GITHUB_DIR into GH_TOKEN for this one
+# process, and runs the real gh. An explicit GH_TOKEN wins; no origin, another
+# host or an unknown owner run gh without a token.
+set -eu
+
+real="${CLAUDE_RC_GH_BIN:-/usr/local/libexec/gh}"
+dir="${CLAUDE_RC_GITHUB_DIR:-/etc/claude-rc/github}"
+
+if [ -z "${GH_TOKEN:-}" ] && [ -d "$dir" ]; then
+    url="$(git remote get-url origin 2>/dev/null || true)"
+    case "$url" in
+        https://github.com/*) owner="${url#https://github.com/}" ;;
+        git@github.com:*) owner="${url#git@github.com:}" ;;
+        *) owner="" ;;
+    esac
+    owner="${owner%%/*}"
+    case "$owner" in
+        "" | . | .. | *[!A-Za-z0-9_.-]*) owner="" ;;
+    esac
+    if [ -n "$owner" ] && [ -f "$dir/$owner" ]; then
+        GH_TOKEN="$(cat "$dir/$owner")" exec "$real" "$@"
+    fi
+fi
+exec "$real" "$@"

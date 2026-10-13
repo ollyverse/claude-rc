@@ -62,8 +62,13 @@ spec:
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
+          # dockerd needs root: the pod-level runAsUser 1000 would otherwise
+          # apply to this container too, and the image exits ("missing rootlesskit").
           securityContext:
             privileged: true
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
           resources:
             {{- toYaml .Values.workers.resources.dind | nindent 12 }}
           volumeMounts:

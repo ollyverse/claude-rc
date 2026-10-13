@@ -76,19 +76,23 @@ class Entrypoint(unittest.TestCase):
         hint = subprocess.Popen([str(ENTRYPOINT)], env={**self.e.env, "CLAUDE_SESSION_NAME": "x", "POD_NAMESPACE": "claude-rc"},
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         first = hint.stdout.readline()
+        while first and "not logged in" not in first:        # earlier log lines (tokens, clones) come first
+            first = hint.stdout.readline()
         pathlib.Path(self.e.env["STUB_LOGGED_IN"]).write_text("")
         out, _ = hint.communicate(timeout=30)
         self.assertIn("kubectl -n claude-rc exec -it claude-rc-5d8f9-abcde -c claude -- claude auth login", first)
         self.assertEqual(hint.returncode, 0, out)
         self.assertTrue(self.final(self.e.log.read_text().splitlines()))
 
-    def test_logs_in_gh_for_every_token_file_and_ignores_dot_entries(self):
+    def test_configures_git_for_the_credential_helper_and_never_logs_gh_in(self):
+        # Fine-grained tokens all authenticate as their creator, so gh could keep only one of them;
+        # the gh wrapper (bin/gh) picks the token per repository instead, and no token is stored.
         (self.e.tokens / "ollyverse").write_text("t1")
         (self.e.tokens / "matofeder").write_text("t2")
         (self.e.tokens / "..data").mkdir()
         r, log = self.e.run(CLAUDE_SESSION_NAME="x")
-        logins = sorted(l for l in log if l.startswith("gh auth login"))
-        self.assertEqual(logins, ["gh auth login --hostname github.com --with-token"] * 2)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse([l for l in log if l.startswith("gh ")], log)
         self.assertIn("git config --global credential.useHttpPath true", log)
         self.assertIn("git config --global credential.https://github.com.helper claude-rc", log)
 

@@ -15,6 +15,7 @@ and `ollyplatform/docs/runbooks/claude-rc.md`.
 Dockerfile                        node:24-bookworm-slim + Claude Code, git, gh, docker CLI, kind, kubectl, helm
 bin/claude-rc                     entrypoint: GitHub tokens, checkouts, wait for the claude.ai login, remote-control server
 bin/git-credential-claude-rc      git credential helper: one token file per GitHub owner
+bin/gh                            gh wrapper: the real gh (/usr/local/libexec/gh) with the current repository owner's token
 charts/claude-rc                  the Helm chart (controller Deployment + RBAC, worker StatefulSet + dind)
 tests/                            unit tests for the two scripts and the rendered chart
 ```
@@ -25,7 +26,11 @@ Remote Control needs a full claude.ai login (`claude auth login`); API keys and 
 cannot open Remote Control sessions. The login lives on the pod's volume under `CLAUDE_CONFIG_DIR`; the
 entrypoint waits until it exists and tells you the `kubectl exec` command to run. GitHub access is one
 fine-grained token per owner, mounted as files named after the owner (`/etc/claude-rc/github/<owner>`);
-`git-credential-claude-rc` picks the file from the repository path, `gh` is logged in to each.
+`git-credential-claude-rc` picks the file from the repository path on every git call, and `gh` is a wrapper
+that runs the real gh with the token of the current repository's `origin` owner in `GH_TOKEN` for that one
+process. Nothing is ever logged in or stored (fine-grained tokens all authenticate as their creator, so
+`gh auth login` could keep only one); a rotated token is used on the next call. Outside a repository, or in
+one whose owner has no token file, `gh` runs unauthenticated; set `GH_TOKEN` yourself for that call.
 
 ## Versions
 

@@ -32,18 +32,18 @@ session_name() {
 }
 
 github() {
+    # git asks git-credential-claude-rc for the owner's token on every call; the
+    # gh wrapper (/usr/local/bin/gh) does the same per invocation. Nothing is
+    # logged in or stored: fine-grained tokens all authenticate as their creator,
+    # so `gh auth login` could keep only one of them.
     [ -d "$CLAUDE_RC_GITHUB_DIR" ] || return 0
     git config --global credential.useHttpPath true
     git config --global credential.https://github.com.helper claude-rc
-    # A Secret mount holds ..data and ..<timestamp> directories too; the glob skips dot entries.
+    n=0
     for f in "$CLAUDE_RC_GITHUB_DIR"/*; do
-        [ -f "$f" ] || continue
-        if gh auth login --hostname github.com --with-token < "$f" >/dev/null 2>&1; then
-            log "gh: logged in with the token for $(basename "$f")"
-        else
-            log "gh auth login failed for $(basename "$f"); git still works through the credential helper"
-        fi
+        [ -f "$f" ] && n=$((n + 1))
     done
+    log "GitHub tokens for $n owner(s) in $CLAUDE_RC_GITHUB_DIR"
 }
 
 identity() {

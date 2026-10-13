@@ -188,7 +188,8 @@ class Chart(unittest.TestCase):
         # "dockerd" first, or the image's entrypoint adds tcp://0.0.0.0:2375 to our unix socket
         self.assertEqual(c["args"], ["dockerd", "--host=unix:///run/docker/docker.sock", "--group=1000"])
         self.assertEqual({e["name"]: e.get("value") for e in c["env"]}, {"DOCKER_TLS_CERTDIR": ""})
-        self.assertEqual(c["securityContext"], {"privileged": True})
+        # root explicitly: the pod-level runAsUser 1000 would otherwise apply and dockerd refuses to start
+        self.assertEqual(c["securityContext"], {"privileged": True, "runAsUser": 0, "runAsGroup": 0, "runAsNonRoot": False})
         self.assertEqual(c["resources"], {"requests": {"cpu": "200m", "memory": "256Mi"}, "limits": {"memory": "1.8Gi"}})
         mounts = {(m["name"], m["mountPath"]) for m in c["volumeMounts"]}
         self.assertEqual(mounts, {("docker-sock", "/run/docker"), ("docker-data", "/var/lib/docker")})

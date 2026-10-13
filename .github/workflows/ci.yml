@@ -44,7 +44,8 @@ jobs:
             kubectl version --client
             helm version --short
             git --version
-            test -x /usr/local/bin/claude-rc && test -x /usr/local/bin/git-credential-claude-rc'
+            test -x /usr/local/bin/claude-rc && test -x /usr/local/bin/git-credential-claude-rc
+            test -x /usr/local/libexec/gh && head -n1 /usr/local/bin/gh | grep -q "^#!/bin/sh"'
       # The worker pod: a privileged dind sidecar sharing a socket directory with the claude container.
       - name: Docker-in-Docker socket is usable from the claude container
         run: |
