@@ -2,7 +2,7 @@
 
 # Claude Code Remote Control session: Claude Code plus the tools a session uses.
 # Everything is pinned; bump the ARGs by hand (README, Versions). linux/amd64 only.
-FROM node:24-bookworm-slim
+FROM node:25-bookworm-slim
 
 ARG CLAUDE_CODE_VERSION=2.1.296
 ARG GH_VERSION=2.102.0
